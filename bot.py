@@ -40,7 +40,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # ==================== البيانات الأساسية ====================
 TELEGRAM_TOKEN = "8991765991:AAGQ_eY8KYcCH5I5d7FW6Uzspr8_4GN8a0w"
-GROQ_API_KEY = "Gsk_btSnikyiegMTC2S6FiffWGdyb3FYZBR17JX34AqzR1qJXBiFgvNN"  
+GROQ_API_KEY = "Gsk_lsOTbHltjcGfsY71r4n9WGdyb3FYtZCXMDVobykN24QF1cMILeug"  # المفتاح الصحيح تماماً
 ADMIN_ID = 1133558968
 
 USERS_FILE = "allowed_users.json"
