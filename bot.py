@@ -100,7 +100,6 @@ def call_google_gemini_direct(image_path, prompt_text):
             }
         }
         
-        # التعديل هنا: إرسال التوكن كـ Bearer في الـ Headers عشان يتوافق مع صيغة AQ.
         headers = {
             "Authorization": f"Bearer {GEMINI_API_KEY}",
             "Content-Type": "application/json"
