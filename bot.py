@@ -411,12 +411,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-async def post_init(application):
-    asyncio.create_task(background_trade_monitor(application))
-
 if __name__ == '__main__':
     request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).request(request).post_init(post_init).build()
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).request(request).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate", activate))
@@ -430,6 +427,19 @@ if __name__ == '__main__':
     text_filter = filters.TEXT & ~filters.COMMAND
     app.add_handler(MessageHandler(text_filter, handle_text))
     
-    print("🟢 البوت يعمل الآن بكامل المزايا الحية والمستقرة...")
-    app.run_polling(bootstrap_retries=-1)
-              
+    # دالة التشغيل الآمن للـ Event Loop الموحدة
+    async def main():
+        await app.initialize()
+        await app.start()
+        # تشغيل مراقبة السوق في الخلفية دون أي تعارض
+        asyncio.create_task(background_trade_monitor(app))
+        print("🟢 البوت يعمل الآن بكامل المزايا الحية والمستقرة...")
+        await app.updater.start_polling(bootstrap_retries=-1)
+        
+        # ابقاء السيرفر مفتوحاً ومستقراً
+        await asyncio.Future()
+
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
