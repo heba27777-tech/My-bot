@@ -81,7 +81,7 @@ def call_openrouter_vision(image_path, prompt_text):
             base64_image = base64.b64encode(img_file.read()).decode('utf-8')
             
         payload = {
-            "model": "openrouter/free",
+            "model": "google/gemini-2.0-flash-exp:free",
             "messages": [
                 {
                     "role": "user",
@@ -105,8 +105,8 @@ def call_openrouter_vision(image_path, prompt_text):
         
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "HTTP-Referer": "https://github.com", # اختيارى من متطلبات أوبن راوتر
-            "X-Title": "Trading Bot",          # اختيارى
+            "HTTP-Referer": "https://github.com",
+            "X-Title": "Trading Bot",
             "Content-Type": "application/json"
         }
         
