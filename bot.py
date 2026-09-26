@@ -4,6 +4,8 @@ import base64
 import requests
 import asyncio
 import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, 
@@ -15,7 +17,26 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
-# تفعيل تسجيل الأخطاء
+# ==================== سيرفر ويب وهمي لمنع نوم البوت على Render ====================
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
+
+    def log_message(self, format, *args):
+        return  # منع طباعة سجلات الزيارات الوهمية لتنظيف الـ Logs
+
+def run_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
+    server.serve_forever()
+
+server_thread = threading.Thread(target=run_server, daemon=True)
+server_thread.start()
+# ==============================================================================
+
+# تفعيل تسجيل الأخطاء الأساسية
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ==================== البيانات الأساسية ====================
@@ -51,9 +72,10 @@ def get_image_mime(file_path):
         return 'image/webp'
     return 'image/jpeg'
 
-# ==================== الاتصال بـ Google Gemini API ====================
+# ==================== الاتصال بـ Google Gemini Flash API ====================
 def call_gemini_rest_vision(image_path, prompt_text):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={GEMINI_API_KEY}"
+    # استخدام الإصدار المستقر والسريع لضمان عدم توقف الـ API
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     mime_type = get_image_mime(image_path)
     
     try:
@@ -77,7 +99,7 @@ def call_gemini_rest_vision(image_path, prompt_text):
         }
         
         headers = {"Content-Type": "application/json"}
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=45)
         
         if response.status_code == 200:
             result = response.json()
@@ -160,7 +182,6 @@ async def background_trade_monitor(application):
                     if current_price:
                         is_buy = "BUY" in direction
                         
-                        # 1. تنبيه استباقي قبل TP1 بـ 10 نقاط لتأمين الصفقة
                         if not status["near_tp1_warned"]:
                             distance = (tp1 - current_price) if is_buy else (current_price - tp1)
                             if 0 < distance <= 10.0:
@@ -170,7 +191,6 @@ async def background_trade_monitor(application):
                                     text=f"⚠️ **تنبيه استباقي | Proactive Alert ({symbol})**:\nالسعر اقترب من TP1 بـ 10 نقاط! 🎯\n*استعد لتحريك الستوب لوز (SL) إلى نقطة الدخول (Entry) وتأمين الأرباح.*"
                                 )
 
-                        # 2. فحص الأهداف بدون أي تكرار
                         targets = [
                             (tp1, "tp1", f"تم تحقيق التيك بروفيت الأول (TP1) لصفقة {symbol} بنجاح! 🚀\n*تم نقل الستوب لوز إلى منطقة الأمان.*"),
                             (tp2, "tp2", f"تم تحقيق التيك بروفيت الثاني (TP2) لصفقة {symbol} بنجاح! 🔥"),
@@ -190,7 +210,6 @@ async def background_trade_monitor(application):
                         if hit_tp3:
                             continue
 
-                        # 3. فحص الستوب لوز (SL)
                         hit_sl = (current_price <= sl) if is_buy else (current_price >= sl)
                         if hit_sl:
                             await application.bot.send_message(chat_id=chat_id, text=f"❌ **تنبيه صفقة {symbol}**:\nللأسف تم ضرب الستوب لوز (SL). Stop Loss Hit.")
@@ -277,7 +296,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 عذراً، يجب تفعيل الاشتراك أولاً.")
         return
 
-    msg = await update.message.reply_text("🧠 جاري تفكيك الشارت والتحليل عبر هندسة Smart Money... ⏳")
+    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل السريع عبر Gemini Flash... ⏳")
     
     unique_suffix = os.urandom(4).hex()
     image_path = f"chart_{user_id}_{unique_suffix}.jpg"
@@ -386,7 +405,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(
             "💡 **طريقة الاستخدام الاحترافي (Professional Usage):**\n"
             "1. أرسل صورة الشارت لأي زوج عملات أو ذهب.\n"
-            "2. سيحلل البوت القمة والقاع، الترند، المتوسطات، شمعة السيولة، والريتست والابتلاع.\n"
+            "2. سيحلل البوت القمة والقاع، الترند، المتوسطات، شمعة السيولة، والريتست والابتلاع بسرعة فائقة.\n"
             "3. سيتم تتبّع الصفقة أوتوماتيكياً وإرسال تنبيه استباقي قبل TP1 بـ 10 نقاط لتحريك الستوب لوز وتأمين الأرباح!"
         )
         
@@ -407,7 +426,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📊 My Trades / صفقاتي النشطة", callback_data="my_trades")]]
     await update.message.reply_text(
-        "📸 أهلاً بك! يرجى إرسال صورة الشارت للبدء في التحليل المؤسسي المتقدم.",
+        "📸 أهلاً بك! يرجى إرسال صورة الشارت للبدء في التحليل السريع والمؤسسي.",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -427,16 +446,13 @@ if __name__ == '__main__':
     text_filter = filters.TEXT & ~filters.COMMAND
     app.add_handler(MessageHandler(text_filter, handle_text))
     
-    # دالة التشغيل الآمن للـ Event Loop الموحدة
     async def main():
         await app.initialize()
         await app.start()
-        # تشغيل مراقبة السوق في الخلفية دون أي تعارض
         asyncio.create_task(background_trade_monitor(app))
-        print("🟢 البوت يعمل الآن بكامل المزايا الحية والمستقرة...")
+        print("🟢 البوت يعمل الآن بكفاءة عالية وثبات تام...")
         await app.updater.start_polling(bootstrap_retries=-1)
         
-        # ابقاء السيرفر مفتوحاً ومستقراً
         await asyncio.Future()
 
     try:
