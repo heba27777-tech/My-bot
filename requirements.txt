@@ -1,3 +1,4 @@
+google-genai
 python-telegram-bot
 requests
-urllib3
+httpx
