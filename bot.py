@@ -40,7 +40,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # ==================== البيانات الأساسية ====================
 TELEGRAM_TOKEN = "8991765991:AAGQ_eY8KYcCH5I5d7FW6Uzspr8_4GN8a0w"
-GROQ_API_KEY = "Gsk_lsOTbHltjcGfsY71r4n9WGdyb3FYtZCXMDVobykN24QF1cMILeug"  # المفتاح الصحيح تماماً
+OPENROUTER_API_KEY = "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"
 ADMIN_ID = 1133558968
 
 USERS_FILE = "allowed_users.json"
@@ -71,9 +71,9 @@ def get_image_mime(file_path):
         return 'image/webp'
     return 'image/jpeg'
 
-# ==================== الاتصال بـ Groq Vision API ====================
-def call_groq_vision(image_path, prompt_text):
-    url = "https://api.groq.com/openai/v1/chat/completions"
+# ==================== الاتصال بـ OpenRouter API ====================
+def call_openrouter_vision(image_path, prompt_text):
+    url = "https://openrouter.ai/api/v1/chat/completions"
     mime_type = get_image_mime(image_path)
     
     try:
@@ -81,7 +81,7 @@ def call_groq_vision(image_path, prompt_text):
             base64_image = base64.b64encode(img_file.read()).decode('utf-8')
             
         payload = {
-            "model": "llama-3.2-90b-vision-preview",
+            "model": "meta-llama/llama-3.2-90b-vision-instruct:free",
             "messages": [
                 {
                     "role": "user",
@@ -104,7 +104,9 @@ def call_groq_vision(image_path, prompt_text):
         }
         
         headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "HTTP-Referer": "https://github.com", # اختيارى من متطلبات أوبن راوتر
+            "X-Title": "Trading Bot",          # اختيارى
             "Content-Type": "application/json"
         }
         
@@ -115,9 +117,9 @@ def call_groq_vision(image_path, prompt_text):
             try:
                 return result['choices'][0]['message']['content']
             except (KeyError, IndexError):
-                return "❌ تعذر استخراج التحليل من رد سيرفر Groq."
+                return "❌ تعذر استخراج التحليل من رد سيرفر OpenRouter."
         else:
-            return f"❌ خطأ من سيرفر Groq ({response.status_code}):\n{response.text}"
+            return f"❌ خطأ من سيرفر OpenRouter ({response.status_code}):\n{response.text}"
             
     except requests.exceptions.Timeout:
         return "❌ انتهت مهلة الاتصال بالسيرفر. يرجى إعادة المحاولة."
@@ -244,7 +246,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             "أهلاً بك في بوت التحليل المالي المؤسسي المتقدم (Smart Money & Price Action Sniper) 📈🤖\n\n"
-            "أرسل صورة الشارت لتفعيل التحليل الهيكلي الشامل عبر محرك Llama 3.2:",
+            "أرسل صورة الشارت لتفعيل التحليل الهيكلي الشامل عبر محرك OpenRouter:",
             reply_markup=reply_markup
         )
     else:
@@ -305,7 +307,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 عذراً، يجب تفعيل الاشتراك أولاً.")
         return
 
-    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل الفائق عبر Llama 3.2 Vision... ⏳")
+    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل عبر OpenRouter Vision... ⏳")
     
     unique_suffix = os.urandom(4).hex()
     image_path = f"chart_{user_id}_{unique_suffix}.jpg"
@@ -359,7 +361,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         
         loop = asyncio.get_running_loop()
-        analysis_result = await loop.run_in_executor(None, call_groq_vision, image_path, prompt)
+        analysis_result = await loop.run_in_executor(None, call_openrouter_vision, image_path, prompt)
         
         keyboard = [[InlineKeyboardButton("📊 My Trades / صفقاتي النشطة", callback_data="my_trades")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -459,7 +461,7 @@ if __name__ == '__main__':
         await app.initialize()
         await app.start()
         asyncio.create_task(background_trade_monitor(app))
-        print("🟢 البوت يعمل الآن بكفاءة عالية وثبات تام عبر Groq...")
+        print("🟢 البوت يعمل الآن بكفاءة عالية وثبات تام عبر OpenRouter...")
         await app.updater.start_polling(bootstrap_retries=-1)
         
         await asyncio.Future()
