@@ -1,5 +1,7 @@
 import os
 import json
+import base64
+import requests
 import asyncio
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -14,8 +16,6 @@ from telegram.ext import (
     ContextTypes
 )
 from telegram.request import HTTPXRequest
-from google import genai
-from PIL import Image
 
 # ==================== سيرفر ويب وهمي لمنع نوم البوت على Render ====================
 class SimpleHandler(BaseHTTPRequestHandler):
@@ -25,7 +25,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is alive and running!")
 
     def log_message(self, format, *args):
-        return  # منع طباعة سجلات الزيارات الوهمية لتنظيف الـ Logs
+        return
 
 def run_server():
     port = int(os.environ.get("PORT", 8080))
@@ -36,20 +36,16 @@ server_thread = threading.Thread(target=run_server, daemon=True)
 server_thread.start()
 # ==============================================================================
 
-# تفعيل تسجيل الأخطاء الأساسية
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ==================== البيانات الأساسية ====================
 TELEGRAM_TOKEN = "8991765991:AAGQ_eY8KYcCH5I5d7FW6Uzspr8_4GN8a0w"
-GEMINI_API_KEY = "AQ.Ab8RN6JNDZnUj5Y_DcRC1CVBjBX9hoOCCSSixmncqSJtewn5AA"  
+GROQ_API_KEY = "Gsk_btSnikyiegMTC2S6FiffWGdyb3FYZBR17JX34AqzR1qJXBiFgvNN"  
 ADMIN_ID = 1133558968
 
 USERS_FILE = "allowed_users.json"
 KEYS_FILE = "valid_keys.json"
 ACTIVE_TRADES_FILE = "active_trades.json"
-
-# تهيئة عميل جوجل الرسمي باستخدام مفتاح الـ AQ الجديد
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 def load_data(file_path):
     if os.path.exists(file_path):
@@ -67,22 +63,64 @@ def save_data(file_path, data):
 allowed_users = load_data(USERS_FILE)
 valid_keys = load_data(KEYS_FILE)
 
-# ==================== الاتصال بـ Google Gemini عبر المكتبة الرسمية ====================
-def call_gemini_vision(image_path, prompt_text):
+def get_image_mime(file_path):
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == '.png':
+        return 'image/png'
+    elif ext == '.webp':
+        return 'image/webp'
+    return 'image/jpeg'
+
+# ==================== الاتصال بـ Groq Vision API ====================
+def call_groq_vision(image_path, prompt_text):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    mime_type = get_image_mime(image_path)
+    
     try:
-        img = Image.open(image_path)
-        
-        # استخدام نموذج gemini-1.5-flash بالطريقة الرسمية الصحيحة
-        response = client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=[img, prompt_text]
-        )
-        
-        if response and response.text:
-            return response.text
-        else:
-            return "❌ تعذر استخراج التحليل من رد جوجل."
+        with open(image_path, "rb") as img_file:
+            base64_image = base64.b64encode(img_file.read()).decode('utf-8')
             
+        payload = {
+            "model": "llama-3.2-90b-vision-preview",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt_text
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "temperature": 0.1,
+            "max_tokens": 1024
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=45)
+        
+        if response.status_code == 200:
+            result = response.json()
+            try:
+                return result['choices'][0]['message']['content']
+            except (KeyError, IndexError):
+                return "❌ تعذر استخراج التحليل من رد سيرفر Groq."
+        else:
+            return f"❌ خطأ من سيرفر Groq ({response.status_code}):\n{response.text}"
+            
+    except requests.exceptions.Timeout:
+        return "❌ انتهت مهلة الاتصال بالسيرفر. يرجى إعادة المحاولة."
     except Exception as e:
         return f"❌ حدث خطأ أثناء المعالجة: {str(e)}"
 
@@ -91,12 +129,10 @@ def get_live_price(symbol):
     try:
         clean_symbol = symbol.upper().strip()
         if "XAU" in clean_symbol or "GOLD" in clean_symbol:
-            import requests
             res = requests.get("https://api.gold-api.com/price/XAU", timeout=10)
             if res.status_code == 200:
                 return float(res.json().get("price", 0))
         else:
-            import requests
             res = requests.get("https://open.er-api.com/v6/latest/USD", timeout=10)
             if res.status_code == 200:
                 rates = res.json().get("rates", {})
@@ -208,7 +244,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             "أهلاً بك في بوت التحليل المالي المؤسسي المتقدم (Smart Money & Price Action Sniper) 📈🤖\n\n"
-            "أرسل صورة الشارت لتفعيل التحليل الهيكلي الشامل ومتابعة السوق الحي:",
+            "أرسل صورة الشارت لتفعيل التحليل الهيكلي الشامل عبر محرك Llama 3.2:",
             reply_markup=reply_markup
         )
     else:
@@ -269,7 +305,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 عذراً، يجب تفعيل الاشتراك أولاً.")
         return
 
-    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل السريع عبر Gemini Flash... ⏳")
+    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل الفائق عبر Llama 3.2 Vision... ⏳")
     
     unique_suffix = os.urandom(4).hex()
     image_path = f"chart_{user_id}_{unique_suffix}.jpg"
@@ -323,7 +359,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         
         loop = asyncio.get_running_loop()
-        analysis_result = await loop.run_in_executor(None, call_gemini_vision, image_path, prompt)
+        analysis_result = await loop.run_in_executor(None, call_groq_vision, image_path, prompt)
         
         keyboard = [[InlineKeyboardButton("📊 My Trades / صفقاتي النشطة", callback_data="my_trades")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -423,7 +459,7 @@ if __name__ == '__main__':
         await app.initialize()
         await app.start()
         asyncio.create_task(background_trade_monitor(app))
-        print("🟢 البوت يعمل الآن بكفاءة عالية وثبات تام...")
+        print("🟢 البوت يعمل الآن بكفاءة عالية وثبات تام عبر Groq...")
         await app.updater.start_polling(bootstrap_retries=-1)
         
         await asyncio.Future()
