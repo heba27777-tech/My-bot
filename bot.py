@@ -40,7 +40,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # ==================== البيانات الأساسية ====================
 TELEGRAM_TOKEN = "8991765991:AAGQ_eY8KYcCH5I5d7FW6Uzspr8_4GN8a0w"
-OPENROUTER_API_KEY = "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"
+GEMINI_API_KEY = "AQ.Ab8RN6J-H_LFDHGpCWQuttf8gqQqWj8GPZPwrJnPacETemK0MQ"
 ADMIN_ID = 1133558968
 
 USERS_FILE = "allowed_users.json"
@@ -71,9 +71,9 @@ def get_image_mime(file_path):
         return 'image/webp'
     return 'image/jpeg'
 
-# ==================== الاتصال بـ OpenRouter API ====================
-def call_openrouter_vision(image_path, prompt_text):
-    url = "https://openrouter.ai/api/v1/chat/completions"
+# ==================== الاتصال المباشر بـ Google Gemini API ====================
+def call_google_gemini_direct(image_path, prompt_text):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     mime_type = get_image_mime(image_path)
     
     try:
@@ -81,32 +81,26 @@ def call_openrouter_vision(image_path, prompt_text):
             base64_image = base64.b64encode(img_file.read()).decode('utf-8')
             
         payload = {
-            "model": "google/gemini-2.0-flash-exp:free",
-            "messages": [
+            "contents": [
                 {
-                    "role": "user",
-                    "content": [
+                    "parts": [
+                        {"text": prompt_text},
                         {
-                            "type": "text",
-                            "text": prompt_text
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{base64_image}"
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": base64_image
                             }
                         }
                     ]
                 }
             ],
-            "temperature": 0.1,
-            "max_tokens": 1024
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": 1024
+            }
         }
         
         headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "HTTP-Referer": "https://github.com",
-            "X-Title": "Trading Bot",
             "Content-Type": "application/json"
         }
         
@@ -115,11 +109,11 @@ def call_openrouter_vision(image_path, prompt_text):
         if response.status_code == 200:
             result = response.json()
             try:
-                return result['choices'][0]['message']['content']
+                return result['candidates'][0]['content']['parts'][0]['text']
             except (KeyError, IndexError):
-                return "❌ تعذر استخراج التحليل من رد سيرفر OpenRouter."
+                return "❌ تعذر استخراج التحليل من رد سيرفر جوجل."
         else:
-            return f"❌ خطأ من سيرفر OpenRouter ({response.status_code}):\n{response.text}"
+            return f"❌ خطأ من سيرفر جوجل ({response.status_code}):\n{response.text}"
             
     except requests.exceptions.Timeout:
         return "❌ انتهت مهلة الاتصال بالسيرفر. يرجى إعادة المحاولة."
@@ -246,7 +240,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             "أهلاً بك في بوت التحليل المالي المؤسسي المتقدم (Smart Money & Price Action Sniper) 📈🤖\n\n"
-            "أرسل صورة الشارت لتفعيل التحليل الهيكلي الشامل عبر محرك OpenRouter:",
+            "أرسل صورة الشارت لتفعيل التحليل الهيكلي الشامل عبر جوجل جيميني:",
             reply_markup=reply_markup
         )
     else:
@@ -307,7 +301,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 عذراً، يجب تفعيل الاشتراك أولاً.")
         return
 
-    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل عبر OpenRouter Vision... ⏳")
+    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل عبر Google Gemini Vision... ⏳")
     
     unique_suffix = os.urandom(4).hex()
     image_path = f"chart_{user_id}_{unique_suffix}.jpg"
@@ -361,7 +355,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         
         loop = asyncio.get_running_loop()
-        analysis_result = await loop.run_in_executor(None, call_openrouter_vision, image_path, prompt)
+        analysis_result = await loop.run_in_executor(None, call_google_gemini_direct, image_path, prompt)
         
         keyboard = [[InlineKeyboardButton("📊 My Trades / صفقاتي النشطة", callback_data="my_trades")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -461,7 +455,7 @@ if __name__ == '__main__':
         await app.initialize()
         await app.start()
         asyncio.create_task(background_trade_monitor(app))
-        print("🟢 البوت يعمل الآن بكفاءة عالية وثبات تام عبر OpenRouter...")
+        print("🟢 البوت يعمل الآن بكفاءة عالية عبر جوجل جيميني المباشر...")
         await app.updater.start_polling(bootstrap_retries=-1)
         
         await asyncio.Future()
