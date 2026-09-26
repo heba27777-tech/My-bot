@@ -71,9 +71,9 @@ def get_image_mime(file_path):
         return 'image/webp'
     return 'image/jpeg'
 
-# ==================== الاتصال المباشر بـ Google Gemini API ====================
+# ==================== الاتصال المباشر بـ Google Gemini API (معدل للـ OAuth Token) ====================
 def call_google_gemini_direct(image_path, prompt_text):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     mime_type = get_image_mime(image_path)
     
     try:
@@ -100,7 +100,9 @@ def call_google_gemini_direct(image_path, prompt_text):
             }
         }
         
+        # التعديل هنا: إرسال التوكن كـ Bearer في الـ Headers عشان يتوافق مع صيغة AQ.
         headers = {
+            "Authorization": f"Bearer {GEMINI_API_KEY}",
             "Content-Type": "application/json"
         }
         
