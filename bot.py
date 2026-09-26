@@ -1,5 +1,7 @@
 import os
 import json
+import base64
+import requests
 import asyncio
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -16,16 +18,12 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
-import requests
-import google.generativeai as genai
-from google.oauth2 import credentials
-
 # ==================== سيرفر ويب وهمي لمنع نوم البوت على Render ====================
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is alive and running!")
+        self.wfile.write(b"Bot is alive and running via bot.py!")
 
     def log_message(self, format, *args):
         return
@@ -43,8 +41,9 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # ==================== البيانات الأساسية ====================
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8991765991:AAGQ_eY8KYcCH5I5d7FW6Uzspr8_4GN8a0w")
-# توكن OAuth المعتمَد بـ AQ
-AQ_TOKEN = os.environ.get("GEMINI_AQ_TOKEN", "AQ.Ab8RN6KGJ1YE5v-sbDS4jNz59gTTlkLwHSDOYZrqsLB5IStL1w")
+
+# المفتاح الخاص بك (DeepSeek / OpenAI Compatible)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "sk-bbabd9137f974a3d86b650827ab7c065")
 ADMIN_ID = 1133558968
 
 USERS_FILE = "allowed_users.json"
@@ -75,28 +74,57 @@ def get_image_mime(file_path):
         return 'image/webp'
     return 'image/jpeg'
 
-# ==================== الاتصال المباشر بـ Google Gemini API باستخدام توكن AQ ====================
+# ==================== الـ Request المعدل ليدعم DeepSeek / OpenAI Format ====================
 def call_google_gemini_direct(image_path, prompt_text):
+    clean_key = GEMINI_API_KEY.strip()
+    
+    # رابط DeepSeek API الرسمي
+    url = "https://api.deepseek.com/v1/chat/completions"
+    mime_type = get_image_mime(image_path)
+    
     try:
-        mime_type = get_image_mime(image_path)
         with open(image_path, "rb") as img_file:
-            image_bytes = img_file.read()
-
-        # إعداد التوثيق باستخدام توكن الـ AQ كـ OAuth Credentials
-        creds = credentials.Credentials(AQ_TOKEN.strip())
-        genai.configure(credentials=creds)
-
-        model = genai.GenerativeModel('gemini-1.5-flash')
-
-        response = model.generate_content([
-            {"mime_type": mime_type, "data": image_bytes},
-            prompt_text
-        ])
-
-        if response and response.text:
-            return response.text
-        return "❌ تعذر استخراج التحليل من رد سيرفر جوجل."
-
+            base64_image = base64.b64encode(img_file.read()).decode('utf-8')
+            
+        headers = {
+            "Authorization": f"Bearer {clean_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # هيكل الطلب المعتمد لمفاتيح sk-
+        payload = {
+            "model": "deepseek-chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.1
+        }
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=45)
+        
+        if response.status_code == 200:
+            result = response.json()
+            try:
+                return result['choices'][0]['message']['content']
+            except (KeyError, IndexError):
+                return "❌ تعذر استخراج التحليل من رد السيرفر."
+        else:
+            return f"❌ خطأ من السيرفر ({response.status_code}):\n{response.text}"
+            
+    except requests.exceptions.Timeout:
+        return "❌ انتهت مهلة الاتصال بالسيرفر. يرجى إعادة المحاولة."
     except Exception as e:
         return f"❌ حدث خطأ أثناء المعالجة: {str(e)}"
 
@@ -220,7 +248,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             "أهلاً بك في بوت التحليل المالي المؤسسي المتقدم (Smart Money & Price Action Sniper) 📈🤖\n\n"
-            "أرسل صورة الشارت لتفعيل التحليل الهيكلي الشامل عبر جوجل جيميني:",
+            "أرسل صورة الشارت لتفعيل التحليل الهيكلي الشامل:",
             reply_markup=reply_markup
         )
     else:
@@ -281,7 +309,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 عذراً، يجب تفعيل الاشتراك أولاً.")
         return
 
-    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل عبر Google Gemini Vision... ⏳")
+    msg = await update.message.reply_text("⚡ جاري تفكيك الشارت والتحليل بواسطة الذكاء الاصطناعي... ⏳")
     
     unique_suffix = os.urandom(4).hex()
     image_path = f"chart_{user_id}_{unique_suffix}.jpg"
