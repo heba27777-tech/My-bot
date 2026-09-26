@@ -2,3 +2,4 @@ google-genai
 python-telegram-bot
 requests
 httpx
+Pillow
