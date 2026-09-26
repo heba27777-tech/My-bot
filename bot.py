@@ -82,7 +82,6 @@ def call_openrouter_vision(image_path, prompt_text):
             
         payload = {
             "model": "openrouter/free",
-,
             "messages": [
                 {
                     "role": "user",
