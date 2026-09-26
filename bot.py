@@ -81,7 +81,8 @@ def call_openrouter_vision(image_path, prompt_text):
             base64_image = base64.b64encode(img_file.read()).decode('utf-8')
             
         payload = {
-            "model": "meta-llama/llama-3.2-90b-vision-instruct:free",
+            "model": "openrouter/free",
+,
             "messages": [
                 {
                     "role": "user",
