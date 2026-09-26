@@ -1,11 +1,10 @@
 import os
 import json
-import base64
-import requests
 import asyncio
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, 
@@ -16,6 +15,10 @@ from telegram.ext import (
     ContextTypes
 )
 from telegram.request import HTTPXRequest
+
+import requests
+import google.generativeai as genai
+from google.oauth2 import credentials
 
 # ==================== سيرفر ويب وهمي لمنع نوم البوت على Render ====================
 class SimpleHandler(BaseHTTPRequestHandler):
@@ -39,8 +42,9 @@ server_thread.start()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ==================== البيانات الأساسية ====================
-TELEGRAM_TOKEN = "8991765991:AAGQ_eY8KYcCH5I5d7FW6Uzspr8_4GN8a0w"
-GEMINI_API_KEY = "AIzaSyCxR_L3YusciQtuujLqrLqWxz0ZOk-14vo"
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8991765991:AAGQ_eY8KYcCH5I5d7FW6Uzspr8_4GN8a0w")
+# توكن OAuth المعتمَد بـ AQ
+AQ_TOKEN = os.environ.get("GEMINI_AQ_TOKEN", "AQ.Ab8RN6KGJ1YE5v-sbDS4jNz59gTTlkLwHSDOYZrqsLB5IStL1w")
 ADMIN_ID = 1133558968
 
 USERS_FILE = "allowed_users.json"
@@ -71,53 +75,28 @@ def get_image_mime(file_path):
         return 'image/webp'
     return 'image/jpeg'
 
-# ==================== الاتصال المباشر بـ Google Gemini API (معدل للمفتاح القياسي AIza) ====================
+# ==================== الاتصال المباشر بـ Google Gemini API باستخدام توكن AQ ====================
 def call_google_gemini_direct(image_path, prompt_text):
-    clean_key = GEMINI_API_KEY.strip()
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={clean_key}"
-    mime_type = get_image_mime(image_path)
-    
     try:
+        mime_type = get_image_mime(image_path)
         with open(image_path, "rb") as img_file:
-            base64_image = base64.b64encode(img_file.read()).decode('utf-8')
-            
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt_text},
-                        {
-                            "inline_data": {
-                                "mime_type": mime_type,
-                                "data": base64_image
-                            }
-                        }
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.1,
-                "maxOutputTokens": 1024
-            }
-        }
-        
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
-        
-        if response.status_code == 200:
-            result = response.json()
-            try:
-                return result['candidates'][0]['content']['parts'][0]['text']
-            except (KeyError, IndexError):
-                return "❌ تعذر استخراج التحليل من رد سيرفر جوجل."
-        else:
-            return f"❌ خطأ من سيرفر جوجل ({response.status_code}):\n{response.text}"
-            
-    except requests.exceptions.Timeout:
-        return "❌ انتهت مهلة الاتصال بالسيرفر. يرجى إعادة المحاولة."
+            image_bytes = img_file.read()
+
+        # إعداد التوثيق باستخدام توكن الـ AQ كـ OAuth Credentials
+        creds = credentials.Credentials(AQ_TOKEN.strip())
+        genai.configure(credentials=creds)
+
+        model = genai.GenerativeModel('gemini-1.5-flash')
+
+        response = model.generate_content([
+            {"mime_type": mime_type, "data": image_bytes},
+            prompt_text
+        ])
+
+        if response and response.text:
+            return response.text
+        return "❌ تعذر استخراج التحليل من رد سيرفر جوجل."
+
     except Exception as e:
         return f"❌ حدث خطأ أثناء المعالجة: {str(e)}"
 
@@ -436,7 +415,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-if __name__ == '__main__':
+async def main():
     request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).request(request).build()
     
@@ -451,16 +430,16 @@ if __name__ == '__main__':
     
     text_filter = filters.TEXT & ~filters.COMMAND
     app.add_handler(MessageHandler(text_filter, handle_text))
-    
-    async def main():
-        await app.initialize()
-        await app.start()
-        asyncio.create_task(background_trade_monitor(app))
-        print("🟢 البوت يعمل الآن بنجاح باستخدام المفتاح الجديد AIzaSy...")
-        await app.updater.start_polling(bootstrap_retries=-1)
-        await asyncio.Future()
 
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    # تشغيل مراقبة الصفحات في الخلفية
+    asyncio.create_task(background_trade_monitor(app))
+
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    
+    # الإبقاء على التشغيل المستمر
+    await asyncio.Event().wait()
+
+if __name__ == '__main__':
+    asyncio.run(main())
