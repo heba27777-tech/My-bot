@@ -40,7 +40,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # ==================== البيانات الأساسية ====================
 TELEGRAM_TOKEN = "8991765991:AAGQ_eY8KYcCH5I5d7FW6Uzspr8_4GN8a0w"
-GEMINI_API_KEY = "AQ.Ab8RN6J-H_LFDHGpCWQuttf8gqQqWj8GPZPwrJnPacETemK0MQ"
+GEMINI_API_KEY = "AIzaSyCxR_L3YusciQtuujLqrLqWxz0ZOk-14vo"
 ADMIN_ID = 1133558968
 
 USERS_FILE = "allowed_users.json"
@@ -71,9 +71,10 @@ def get_image_mime(file_path):
         return 'image/webp'
     return 'image/jpeg'
 
-# ==================== الاتصال المباشر بـ Google Gemini API (معدل للـ OAuth Token) ====================
+# ==================== الاتصال المباشر بـ Google Gemini API (معدل للمفتاح القياسي AIza) ====================
 def call_google_gemini_direct(image_path, prompt_text):
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    clean_key = GEMINI_API_KEY.strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={clean_key}"
     mime_type = get_image_mime(image_path)
     
     try:
@@ -101,7 +102,6 @@ def call_google_gemini_direct(image_path, prompt_text):
         }
         
         headers = {
-            "Authorization": f"Bearer {GEMINI_API_KEY}",
             "Content-Type": "application/json"
         }
         
@@ -456,9 +456,8 @@ if __name__ == '__main__':
         await app.initialize()
         await app.start()
         asyncio.create_task(background_trade_monitor(app))
-        print("🟢 البوت يعمل الآن بكفاءة عالية عبر جوجل جيميني المباشر...")
+        print("🟢 البوت يعمل الآن بنجاح باستخدام المفتاح الجديد AIzaSy...")
         await app.updater.start_polling(bootstrap_retries=-1)
-        
         await asyncio.Future()
 
     try:
