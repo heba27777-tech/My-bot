@@ -1,3 +1,5 @@
-python-telegram-bot
-requests
-httpx
+python-telegram-bot>=21.0
+requests>=2.31.0
+httpx>=0.27.0
+google-generativeai>=0.8.0
+google-auth>=2.29.0
