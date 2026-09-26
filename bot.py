@@ -1,7 +1,5 @@
 import os
 import json
-import base64
-import requests
 import asyncio
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -16,6 +14,8 @@ from telegram.ext import (
     ContextTypes
 )
 from telegram.request import HTTPXRequest
+from google import genai
+from PIL import Image
 
 # ==================== سيرفر ويب وهمي لمنع نوم البوت على Render ====================
 class SimpleHandler(BaseHTTPRequestHandler):
@@ -48,6 +48,9 @@ USERS_FILE = "allowed_users.json"
 KEYS_FILE = "valid_keys.json"
 ACTIVE_TRADES_FILE = "active_trades.json"
 
+# تهيئة عميل جوجل الرسمي باستخدام مفتاح الـ AQ الجديد
+client = genai.Client(api_key=GEMINI_API_KEY)
+
 def load_data(file_path):
     if os.path.exists(file_path):
         try:
@@ -64,54 +67,22 @@ def save_data(file_path, data):
 allowed_users = load_data(USERS_FILE)
 valid_keys = load_data(KEYS_FILE)
 
-def get_image_mime(file_path):
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext == '.png':
-        return 'image/png'
-    elif ext == '.webp':
-        return 'image/webp'
-    return 'image/jpeg'
-
-# ==================== الاتصال بـ Google Gemini Flash API ====================
-def call_gemini_rest_vision(image_path, prompt_text):
-    # استخدام الإصدار المستقر والسريع لضمان عدم توقف الـ API
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    mime_type = get_image_mime(image_path)
-    
+# ==================== الاتصال بـ Google Gemini عبر المكتبة الرسمية ====================
+def call_gemini_vision(image_path, prompt_text):
     try:
-        with open(image_path, "rb") as img_file:
-            base64_image = base64.b64encode(img_file.read()).decode('utf-8')
-            
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt_text},
-                        {
-                            "inline_data": {
-                                "mime_type": mime_type,
-                                "data": base64_image
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
+        img = Image.open(image_path)
         
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
+        # استخدام نموذج gemini-1.5-flash بالطريقة الرسمية الصحيحة
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=[img, prompt_text]
+        )
         
-        if response.status_code == 200:
-            result = response.json()
-            try:
-                return result['candidates'][0]['content']['parts'][0]['text']
-            except (KeyError, IndexError):
-                return "❌ تعذر استخراج التحليل من رد جوجل."
+        if response and response.text:
+            return response.text
         else:
-            return f"❌ خطأ من سيرفر جوجل ({response.status_code}):\n{response.text}"
+            return "❌ تعذر استخراج التحليل من رد جوجل."
             
-    except requests.exceptions.Timeout:
-        return "❌ انتهت مهلة الاتصال بالسيرفر. يرجى إعادة المحاولة."
     except Exception as e:
         return f"❌ حدث خطأ أثناء المعالجة: {str(e)}"
 
@@ -120,10 +91,12 @@ def get_live_price(symbol):
     try:
         clean_symbol = symbol.upper().strip()
         if "XAU" in clean_symbol or "GOLD" in clean_symbol:
+            import requests
             res = requests.get("https://api.gold-api.com/price/XAU", timeout=10)
             if res.status_code == 200:
                 return float(res.json().get("price", 0))
         else:
+            import requests
             res = requests.get("https://open.er-api.com/v6/latest/USD", timeout=10)
             if res.status_code == 200:
                 rates = res.json().get("rates", {})
@@ -350,7 +323,7 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         
         loop = asyncio.get_running_loop()
-        analysis_result = await loop.run_in_executor(None, call_gemini_rest_vision, image_path, prompt)
+        analysis_result = await loop.run_in_executor(None, call_gemini_vision, image_path, prompt)
         
         keyboard = [[InlineKeyboardButton("📊 My Trades / صفقاتي النشطة", callback_data="my_trades")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
